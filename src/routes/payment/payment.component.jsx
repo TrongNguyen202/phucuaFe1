@@ -5,9 +5,9 @@ import { usePayment } from "../../store/hooks";
 import { useOrder }   from "../../store/hooks";
 import "./payment.styles.scss";
 
-const BANK_NUMBER = import.meta.env.VITE_BANK_NUMBER || "0123499999";
+const BANK_NUMBER = import.meta.env.VITE_BANK_NUMBER || "9968083967";
 const BANK_NAME   = import.meta.env.VITE_BANK_NAME   || "Vietcombank";
-const ACCOUNT_NAME = import.meta.env.VITE_ACCOUNT_NAME || "NGUYEN VAN A";
+const ACCOUNT_NAME = import.meta.env.VITE_ACCOUNT_NAME || "NGUYEN DINH TRONG";
 
 const Payment = () => {
   const { orderId }  = useParams();
