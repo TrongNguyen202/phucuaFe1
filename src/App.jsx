@@ -60,6 +60,7 @@ import Cart          from "./routes/cart/cart.component";
 import Checkout      from "./routes/checkout/checkout.component";
 import Payment       from "./routes/payment/payment.component";
 import Orders        from "./routes/orders/orders.component";
+import Profile from "./routes/profile/Profile.component";
 
 // Route yêu cầu đăng nhập
 const PrivateRoute = ({ children }) => {
@@ -92,6 +93,7 @@ const App = () => {
       <Route path="/payment/:orderId"  element={<PrivateRoute><Payment /></PrivateRoute>} />
       <Route path="/orders"            element={<PrivateRoute><Orders /></PrivateRoute>} />
       <Route path="/orders/:orderId"   element={<PrivateRoute><Orders /></PrivateRoute>} />
+      <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
     </Routes>
   );
 };
