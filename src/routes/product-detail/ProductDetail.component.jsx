@@ -7,9 +7,12 @@ import { useCart }    from "../../store/hooks";
 import "./productDetail.styles.scss";
 
 // ─── Gallery ──────────────────────────────────────────────────────
-const Gallery = ({ thumbnail }) => {
-  const imgs = [thumbnail].filter(Boolean);
+const Gallery = ({ thumbnail, variantImage }) => {
+  const imgs = [variantImage, thumbnail].filter(Boolean);
   const [active, setActive] = useState(0);
+
+  // Khi đổi variant image thì reset về ảnh đầu
+  useEffect(() => { setActive(0); }, [variantImage]);
 
   return (
     <div className="gallery">
@@ -39,8 +42,8 @@ const Gallery = ({ thumbnail }) => {
 
 // ─── Product Detail ───────────────────────────────────────────────
 const ProductDetail = () => {
-  const { slug }    = useParams();
-  const navigate    = useNavigate();
+  const { slug }  = useParams();
+  const navigate  = useNavigate();
 
   const {
     detail: product, variants, loading,
@@ -49,6 +52,7 @@ const ProductDetail = () => {
 
   const { addToCart, loading: cartLoading } = useCart();
 
+  const [selectedType,  setSelectedType]  = useState(null);
   const [selectedSize,  setSelectedSize]  = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
   const [quantity,      setQuantity]      = useState(1);
@@ -65,43 +69,60 @@ const ProductDetail = () => {
   }, [product?.id]);
 
   useEffect(() => {
+    setSelectedType(null);
     setSelectedSize(null);
     setSelectedColor(null);
     setQuantity(1);
     setAddStatus(null);
   }, [slug]);
 
-  // Unique sizes & colors from active variants
+  // ── Unique types từ active variants
+  const availableTypes = [...new Map(
+    variants.filter((v) => v.is_active && v.type)
+      .map((v) => [v.type.id, v.type])
+  ).values()];
+
+  // ── Unique sizes lọc theo type đã chọn
   const availableSizes = [...new Map(
-    variants.filter((v) => v.is_active && v.size)
+    variants
+      .filter((v) => {
+        if (!v.is_active || !v.size) return false;
+        if (selectedType) return v.type?.id === selectedType.id;
+        return true;
+      })
       .map((v) => [v.size.id, v.size])
   ).values()];
 
+  // ── Unique colors lọc theo type + size đã chọn
   const availableColors = [...new Map(
     variants
       .filter((v) => {
         if (!v.is_active || !v.color) return false;
-        if (selectedSize) return v.size?.id === selectedSize.id;
+        if (selectedType && v.type?.id !== selectedType.id) return false;
+        if (selectedSize && v.size?.id !== selectedSize.id) return false;
         return true;
       })
       .map((v) => [v.color.id, v.color])
   ).values()];
 
-  // Match variant from selection
+  // ── Match variant từ selection
   const matchedVariant = variants.find((v) => {
+    const typeOk  = !selectedType  || v.type?.id  === selectedType.id;
     const sizeOk  = !selectedSize  || v.size?.id  === selectedSize.id;
     const colorOk = !selectedColor || v.color?.id === selectedColor.id;
-    return sizeOk && colorOk && v.is_active;
+    return typeOk && sizeOk && colorOk && v.is_active;
   });
 
   const price   = matchedVariant?.price   ?? product?.base_price ?? 0;
   const stock   = matchedVariant?.stock   ?? null;
   const inStock = stock === null ? true : stock > 0;
 
+  const needsType  = availableTypes.length  > 0;
   const needsSize  = availableSizes.length  > 0;
   const needsColor = availableColors.length > 0;
 
   const canAdd = () => {
+    if (needsType  && !selectedType)  return false;
     if (needsSize  && !selectedSize)  return false;
     if (needsColor && !selectedColor) return false;
     if (!inStock) return false;
@@ -109,7 +130,11 @@ const ProductDetail = () => {
   };
 
   const handleAdd = async () => {
-    if (!canAdd()) { setAddStatus("error"); setTimeout(() => setAddStatus(null), 2500); return; }
+    if (!canAdd()) {
+      setAddStatus("error");
+      setTimeout(() => setAddStatus(null), 2500);
+      return;
+    }
     await addToCart(matchedVariant.id, quantity);
     setAddStatus("success");
     setTimeout(() => setAddStatus(null), 2500);
@@ -119,6 +144,19 @@ const ProductDetail = () => {
     if (!canAdd()) { setAddStatus("error"); return; }
     await addToCart(matchedVariant.id, quantity);
     navigate("/cart");
+  };
+
+  // Khi đổi type → reset size và color
+  const handleSelectType = (t) => {
+    setSelectedType(t);
+    setSelectedSize(null);
+    setSelectedColor(null);
+  };
+
+  // Khi đổi size → reset color
+  const handleSelectSize = (s) => {
+    setSelectedSize(s);
+    setSelectedColor(null);
   };
 
   // ── Loading skeleton
@@ -144,7 +182,9 @@ const ProductDetail = () => {
         <Header />
         <div className="pd__not-found">
           <p>Không tìm thấy sản phẩm.</p>
-          <button className="pdbtn pdbtn--primary" onClick={() => navigate("/")}>Về trang chủ</button>
+          <button className="pdbtn pdbtn--primary" onClick={() => navigate("/")}>
+            Về trang chủ
+          </button>
         </div>
       </div>
     );
@@ -168,8 +208,11 @@ const ProductDetail = () => {
 
         <div className="pd__inner">
 
-          {/* Left: gallery */}
-          <Gallery thumbnail={product?.thumbnail} />
+          {/* Left: gallery — truyền variant image nếu có */}
+          <Gallery
+            thumbnail={product?.thumbnail}
+            variantImage={matchedVariant?.image || null}
+          />
 
           {/* Right: info */}
           <div className="pd__info">
@@ -183,7 +226,7 @@ const ProductDetail = () => {
               </span>
               {matchedVariant && stock !== null && (
                 <span className={`pd__stock ${inStock ? "pd__stock--in" : "pd__stock--out"}`}>
-                  {inStock ? `Còn ${stock}` : "Hết hàng"}
+                  {inStock ? `Còn ${stock} sản phẩm` : "Hết hàng"}
                 </span>
               )}
             </div>
@@ -192,17 +235,46 @@ const ProductDetail = () => {
               <p className="pd__short">{product.short_description}</p>
             )}
 
-            {/* Size */}
+            {/* ── Type selector ── */}
+            {needsType && (
+              <div className="pd__selector">
+                <div className="pd__selector-head">
+                  <span className="pd__selector-label">Loại sản phẩm</span>
+                  {selectedType && (
+                    <span className="pd__selector-val">{selectedType.name}</span>
+                  )}
+                </div>
+                <div className="pd__selector-opts">
+                  {availableTypes.map((t) => (
+                    <button
+                      key={t.id}
+                      className={`pd__type-opt ${selectedType?.id === t.id ? "pd__type-opt--active" : ""}`}
+                      onClick={() => handleSelectType(t)}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── Size selector ── */}
             {needsSize && (
               <div className="pd__selector">
                 <div className="pd__selector-head">
                   <span className="pd__selector-label">Kích cỡ</span>
-                  {selectedSize && <span className="pd__selector-val">{selectedSize.name}</span>}
+                  {selectedSize && (
+                    <span className="pd__selector-val">{selectedSize.name}</span>
+                  )}
                 </div>
                 <div className="pd__selector-opts">
                   {availableSizes.map((s) => {
                     const hasStock = variants.some(
-                      (v) => v.size?.id === s.id && v.is_active && v.stock > 0
+                      (v) =>
+                        v.size?.id === s.id &&
+                        v.is_active &&
+                        v.stock > 0 &&
+                        (!selectedType || v.type?.id === selectedType.id)
                     );
                     return (
                       <button
@@ -211,7 +283,8 @@ const ProductDetail = () => {
                           ${selectedSize?.id === s.id ? "pd__size-opt--active" : ""}
                           ${!hasStock ? "pd__size-opt--out" : ""}
                         `}
-                        onClick={() => { setSelectedSize(s); setSelectedColor(null); }}
+                        onClick={() => handleSelectSize(s)}
+                        disabled={!hasStock}
                       >
                         {s.name}
                         {!hasStock && <span className="pd__size-cross" />}
@@ -222,12 +295,14 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {/* Color */}
+            {/* ── Color selector ── */}
             {needsColor && (
               <div className="pd__selector">
                 <div className="pd__selector-head">
                   <span className="pd__selector-label">Màu sắc</span>
-                  {selectedColor && <span className="pd__selector-val">{selectedColor.name}</span>}
+                  {selectedColor && (
+                    <span className="pd__selector-val">{selectedColor.name}</span>
+                  )}
                 </div>
                 <div className="pd__selector-opts pd__selector-opts--colors">
                   {availableColors.map((c) => (
@@ -243,11 +318,14 @@ const ProductDetail = () => {
               </div>
             )}
 
-            {/* Quantity */}
+            {/* ── Quantity ── */}
             <div className="pd__qty">
               <span className="pd__selector-label">Số lượng</span>
               <div className="pd__qty-ctrl">
-                <button onClick={() => setQuantity((q) => Math.max(1, q - 1))} disabled={quantity <= 1}>−</button>
+                <button
+                  onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  disabled={quantity <= 1}
+                >−</button>
                 <span>{quantity}</span>
                 <button
                   onClick={() => setQuantity((q) => Math.min(stock ?? 99, q + 1))}
@@ -256,19 +334,23 @@ const ProductDetail = () => {
               </div>
             </div>
 
-            {/* Alert */}
+            {/* ── Alert ── */}
             {addStatus === "error" && (
               <div className="pd__alert pd__alert--error">
-                Vui lòng chọn {!selectedSize && needsSize ? "kích cỡ" : ""}
-                {!selectedSize && needsSize && !selectedColor && needsColor ? " và " : ""}
-                {!selectedColor && needsColor ? "màu sắc" : ""} trước khi thêm vào giỏ.
+                Vui lòng chọn
+                {needsType  && !selectedType  ? " loại sản phẩm" : ""}
+                {needsSize  && !selectedSize  ? ", kích cỡ" : ""}
+                {needsColor && !selectedColor ? ", màu sắc" : ""}
+                {" "}trước khi thêm vào giỏ.
               </div>
             )}
             {addStatus === "success" && (
-              <div className="pd__alert pd__alert--success">✓ Đã thêm vào giỏ hàng!</div>
+              <div className="pd__alert pd__alert--success">
+                ✓ Đã thêm vào giỏ hàng!
+              </div>
             )}
 
-            {/* CTA */}
+            {/* ── CTA ── */}
             <div className="pd__cta">
               <button
                 className="pdbtn pdbtn--outline"
@@ -286,7 +368,7 @@ const ProductDetail = () => {
               </button>
             </div>
 
-            {/* Policies */}
+            {/* ── Policies ── */}
             <div className="pd__policies">
               {[
                 ["🚚", "Miễn phí ship đơn từ 500.000₫"],
@@ -301,10 +383,13 @@ const ProductDetail = () => {
           </div>
         </div>
 
-        {/* Tabs */}
+        {/* ── Tabs ── */}
         <div className="pd__tabs">
           <div className="pd__tabs-nav">
-            {[["desc","Mô tả sản phẩm"],["variants","Biến thể & Tồn kho"]].map(([k, label]) => (
+            {[
+              ["desc",     "Mô tả sản phẩm"],
+              ["variants", "Biến thể & Tồn kho"],
+            ].map(([k, label]) => (
               <button
                 key={k}
                 className={`pd__tab ${activeTab === k ? "pd__tab--active" : ""}`}
@@ -319,42 +404,51 @@ const ProductDetail = () => {
             {activeTab === "desc" && (
               <p className="pd__desc">{product?.description || "Chưa có mô tả."}</p>
             )}
+
             {activeTab === "variants" && (
               <div className="pd__vtable-wrap">
-                {variants.length === 0
-                  ? <p className="pd__desc">Không có biến thể.</p>
-                  : (
-                    <table className="pd__vtable">
-                      <thead>
-                        <tr>
-                          <th>SKU</th><th>Size</th><th>Màu</th><th>Giá</th><th>Tồn kho</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {variants.map((v) => (
-                          <tr key={v.id} className={v.stock <= 0 ? "pd__vtable-out" : ""}>
-                            <td className="pd__vtable-mono">{v.sku}</td>
-                            <td>{v.size?.name || "—"}</td>
-                            <td>
-                              {v.color
-                                ? <span className="pd__color-cell">
-                                    <span className="pd__color-dot" style={{ background: v.color.hex_code }} />
-                                    {v.color.name}
-                                  </span>
-                                : "—"}
-                            </td>
-                            <td>{Number(v.price).toLocaleString("vi-VN")}₫</td>
-                            <td>
-                              <span className={`pd__sbadge ${v.stock > 0 ? "pd__sbadge--in" : "pd__sbadge--out"}`}>
-                                {v.stock > 0 ? v.stock : "Hết"}
+                {variants.length === 0 ? (
+                  <p className="pd__desc">Không có biến thể.</p>
+                ) : (
+                  <table className="pd__vtable">
+                    <thead>
+                      <tr>
+                        <th>SKU</th>
+                        <th>Loại</th>
+                        <th>Size</th>
+                        <th>Màu</th>
+                        <th>Giá</th>
+                        <th>Tồn kho</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {variants.map((v) => (
+                        <tr key={v.id} className={v.stock <= 0 ? "pd__vtable-out" : ""}>
+                          <td className="pd__vtable-mono">{v.sku}</td>
+                          <td>{v.type?.name || "—"}</td>
+                          <td>{v.size?.name || "—"}</td>
+                          <td>
+                            {v.color ? (
+                              <span className="pd__color-cell">
+                                <span
+                                  className="pd__color-dot"
+                                  style={{ background: v.color.hex_code }}
+                                />
+                                {v.color.name}
                               </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )
-                }
+                            ) : "—"}
+                          </td>
+                          <td>{Number(v.price).toLocaleString("vi-VN")}₫</td>
+                          <td>
+                            <span className={`pd__sbadge ${v.stock > 0 ? "pd__sbadge--in" : "pd__sbadge--out"}`}>
+                              {v.stock > 0 ? v.stock : "Hết"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>

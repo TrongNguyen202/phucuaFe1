@@ -1,40 +1,81 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
 import Header from "../../components/header/header.component";
 import { usePayment } from "../../store/hooks";
 import { useOrder }   from "../../store/hooks";
+import api, { paymentApi } from "../../utils/api/api";
+import {
+  setCurrentPayment,
+  startPolling,
+  stopPolling,
+} from "../../store/slices/paymentSlice";
 import "./payment.styles.scss";
 
-const BANK_NUMBER = import.meta.env.VITE_BANK_NUMBER || "9968083967";
-const BANK_NAME   = import.meta.env.VITE_BANK_NAME   || "Vietcombank";
-const ACCOUNT_NAME = import.meta.env.VITE_ACCOUNT_NAME || "NGUYEN DINH TRONG";
+const BANK_NUMBER  = import.meta.env.VITE_BANK_NUMBER   || "9968083967";
+const BANK_NAME    = import.meta.env.VITE_BANK_NAME     || "VCB";
+const ACCOUNT_NAME = import.meta.env.VITE_ACCOUNT_NAME  || "NGUYEN DINH TRONG";
 
 const Payment = () => {
-  const { orderId }  = useParams();
-  const navigate     = useNavigate();
+  const { orderId } = useParams();
+  const navigate    = useNavigate();
+  const dispatch    = useDispatch();
+
   const { currentPayment, isPolling, isPaid, createSePay, clearPayment } = usePayment();
   const { fetchById, detail: order } = useOrder();
-  const [copied, setCopied] = useState(null);
 
+  const [copied,    setCopied]    = useState(null);
+  const [initDone,  setInitDone]  = useState(false); // đã fetch xong chưa
+
+  // ── Init: fetch order + payment hiện có hoặc tạo mới
   useEffect(() => {
-    if (orderId) {
-      fetchById(orderId);
+    if (!orderId) return;
 
-      // Nếu chưa có payment thì tạo mới
-      if (!currentPayment) {
-        createSePay(orderId);
+    const init = async () => {
+      // 1. Fetch order để lấy total
+      await fetchById(orderId);
+
+      // 2. Kiểm tra payment đã tồn tại chưa
+      try {
+        const { data } = await api.get("/payments/", {
+          params: { order: orderId },
+        });
+        const existing = data.results?.[0] ?? data[0];
+
+        if (existing) {
+          // Đã có payment → dùng luôn
+          dispatch(setCurrentPayment(existing));
+
+          if (existing.status === "pending") {
+            dispatch(startPolling());
+            const stopFn = paymentApi.pollStatus(orderId, (paid) => {
+              dispatch(setCurrentPayment(paid));
+              dispatch(stopPolling());
+            });
+            window.__stopSePayPolling = stopFn;
+          }
+        } else {
+          // Chưa có → tạo mới
+          await createSePay(orderId);
+        }
+      } catch {
+        // Fallback: tạo mới nếu fetch lỗi
+        await createSePay(orderId);
       }
-    }
+
+      setInitDone(true);
+    };
+
+    init();
 
     return () => {
-      // Dừng polling khi rời trang
       if (window.__stopSePayPolling) {
         window.__stopSePayPolling();
       }
     };
   }, [orderId]);
 
-  // Redirect khi đã thanh toán
+  // ── Redirect khi đã thanh toán
   useEffect(() => {
     if (isPaid) {
       setTimeout(() => {
@@ -51,14 +92,19 @@ const Payment = () => {
   };
 
   const paymentCode = currentPayment?.payment_code || `SHOP${orderId}`;
-  const amount      = currentPayment?.amount || order?.total || 0;
 
-  // QR VietQR
-  const qrUrl = `https://img.vietqr.io/image/${BANK_NAME}-${BANK_NUMBER}-compact2.png`
-    + `?amount=${Math.round(Number(amount))}`
-    + `&addInfo=${encodeURIComponent(paymentCode)}`
-    + `&accountName=${encodeURIComponent(ACCOUNT_NAME)}`;
+  // Ưu tiên: currentPayment.amount → order.total → 0
+  const amount = Number(currentPayment?.amount) || Number(order?.total) || 0;
 
+  // Chỉ build QR khi có đủ dữ liệu
+  const qrUrl = amount > 0
+    ? `https://img.vietqr.io/image/${BANK_NAME}-${BANK_NUMBER}-compact2.png`
+      + `?amount=${Math.round(amount)}`
+      + `&addInfo=${encodeURIComponent(paymentCode)}`
+      + `&accountName=${encodeURIComponent(ACCOUNT_NAME)}`
+    : null;
+
+  // ── Success screen
   if (isPaid) {
     return (
       <div className="payment-page">
@@ -79,7 +125,7 @@ const Payment = () => {
       <main className="payment-page__main">
         <div className="payment-page__inner">
 
-          {/* Left: QR + info */}
+          {/* ── Left: QR + info ── */}
           <div className="payment-card">
             <div className="payment-card__head">
               <h1 className="payment-card__title">Chuyển khoản ngân hàng</h1>
@@ -88,11 +134,30 @@ const Payment = () => {
 
             {/* QR Code */}
             <div className="payment-qr">
-              <img src={qrUrl} alt="QR thanh toán" className="payment-qr__img" />
-              {isPolling && (
-                <div className="payment-qr__overlay">
-                  <div className="payment-qr__pulse" />
-                  <p>Đang chờ thanh toán...</p>
+              {qrUrl ? (
+                <>
+                  <img
+                    src={qrUrl}
+                    alt="QR thanh toán"
+                    className="payment-qr__img"
+                    onError={(e) => {
+                      // Retry sau 2 giây nếu lỗi
+                      setTimeout(() => {
+                        e.target.src = qrUrl + "&_t=" + Date.now();
+                      }, 2000);
+                    }}
+                  />
+                  {isPolling && (
+                    <div className="payment-qr__overlay">
+                      <div className="payment-qr__pulse" />
+                      <p>Đang chờ thanh toán...</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="payment-qr__loading">
+                  <div className="payment-qr__spinner" />
+                  <p>{initDone ? "Không thể tạo mã QR" : "Đang tạo mã QR..."}</p>
                 </div>
               )}
             </div>
@@ -125,7 +190,9 @@ const Payment = () => {
               <div className="bank-info__row">
                 <span className="bank-info__label">Số tiền</span>
                 <span className="bank-info__val bank-info__val--amount">
-                  {Number(amount).toLocaleString("vi-VN")}₫
+                  {amount > 0
+                    ? Number(amount).toLocaleString("vi-VN") + "₫"
+                    : "Đang tải..."}
                 </span>
               </div>
 
@@ -149,22 +216,25 @@ const Payment = () => {
                 <line x1="12" y1="8" x2="12" y2="12" />
                 <line x1="12" y1="16" x2="12.01" y2="16" />
               </svg>
-              <p>Vui lòng ghi <strong>đúng nội dung chuyển khoản</strong> để hệ thống xác nhận tự động.</p>
+              <p>
+                Vui lòng ghi <strong>đúng nội dung chuyển khoản</strong> để hệ thống xác nhận tự động.
+              </p>
             </div>
           </div>
 
-          {/* Right: order info */}
+          {/* ── Right: order info ── */}
           <div className="payment-order">
             <h2 className="payment-order__title">Thông tin đơn hàng #{orderId}</h2>
 
-            {order && (
+            {order ? (
               <>
                 <div className="payment-order__section">
                   <p className="payment-order__label">Địa chỉ giao hàng</p>
                   <p className="payment-order__val">{order.shipping_full_name}</p>
                   <p className="payment-order__val payment-order__val--muted">{order.shipping_phone}</p>
                   <p className="payment-order__val payment-order__val--muted">
-                    {order.shipping_address}, {order.shipping_ward}, {order.shipping_district}, {order.shipping_city}
+                    {order.shipping_address}, {order.shipping_ward},{" "}
+                    {order.shipping_district}, {order.shipping_city}
                   </p>
                 </div>
 
@@ -175,7 +245,9 @@ const Payment = () => {
                     <div key={item.id} className="payment-order__item">
                       <span className="payment-order__item-name">
                         {item.product_name}
-                        {item.quantity > 1 && <span className="payment-order__item-qty"> ×{item.quantity}</span>}
+                        {item.quantity > 1 && (
+                          <span className="payment-order__item-qty"> ×{item.quantity}</span>
+                        )}
                       </span>
                       <span className="payment-order__item-price">
                         {Number(item.subtotal).toLocaleString("vi-VN")}₫
@@ -193,7 +265,11 @@ const Payment = () => {
                   </div>
                   <div className="payment-order__row">
                     <span>Phí vận chuyển</span>
-                    <span>{Number(order.shipping_fee) === 0 ? "Miễn phí" : `${Number(order.shipping_fee).toLocaleString("vi-VN")}₫`}</span>
+                    <span>
+                      {Number(order.shipping_fee) === 0
+                        ? "Miễn phí"
+                        : `${Number(order.shipping_fee).toLocaleString("vi-VN")}₫`}
+                    </span>
                   </div>
                 </div>
 
@@ -202,11 +278,17 @@ const Payment = () => {
                   <span>{Number(order.total).toLocaleString("vi-VN")}₫</span>
                 </div>
               </>
+            ) : (
+              <div className="payment-order__loading">
+                <div className="payment-qr__spinner" />
+              </div>
             )}
 
             <div className="payment-status">
               <div className={`payment-status__dot ${isPolling ? "payment-status__dot--pulse" : ""}`} />
-              <span>{isPolling ? "Đang chờ xác nhận thanh toán..." : "Chưa xác nhận"}</span>
+              <span>
+                {isPolling ? "Đang chờ xác nhận thanh toán..." : "Chưa xác nhận"}
+              </span>
             </div>
 
             <button

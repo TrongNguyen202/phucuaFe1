@@ -9,7 +9,7 @@ import "./cart.styles.scss";
 const CartItem = ({ item, onUpdate, onRemove }) => {
   const variant = item.variant || {};
   const product = variant.product || {};
-
+  console.log("product image", variant)
   return (
     <div className="cart-item">
       <div className="cart-item__img-wrap">
