@@ -5,9 +5,10 @@ import Footer  from "../../components/footer/footer.component";
 import { useAuth }  from "../../store/hooks";
 import { useOrder } from "../../store/hooks";
 import "./Profile.styles.scss";
-import { accountsApi } from "../../utils/api/api";
-// ─── Avatar Upload ────────────────────────────────────────────────
-const AvatarSection = ({ user, onUpdate }) => {
+import { accountsApi, authApi } from "../../utils/api/api";
+
+// ─── Avatar ───────────────────────────────────────────────────────
+const AvatarSection = ({ user }) => {
   const initials = user
     ? (user.first_name?.[0] || user.username?.[0] || "U").toUpperCase()
     : "U";
@@ -63,42 +64,26 @@ const InfoForm = ({ user, onSave, loading }) => {
       <div className="profile-form__row">
         <div className="pf-field">
           <label className="pf-field__label">Họ</label>
-          <input
-            className="pf-field__input"
-            value={form.last_name}
-            onChange={(e) => set("last_name", e.target.value)}
-            placeholder="Nguyễn"
-          />
+          <input className="pf-field__input" value={form.last_name}
+            onChange={(e) => set("last_name", e.target.value)} placeholder="Nguyễn" />
         </div>
         <div className="pf-field">
           <label className="pf-field__label">Tên</label>
-          <input
-            className="pf-field__input"
-            value={form.first_name}
-            onChange={(e) => set("first_name", e.target.value)}
-            placeholder="Văn A"
-          />
+          <input className="pf-field__input" value={form.first_name}
+            onChange={(e) => set("first_name", e.target.value)} placeholder="Văn A" />
         </div>
       </div>
 
       <div className="pf-field">
         <label className="pf-field__label">Email</label>
-        <input
-          className="pf-field__input"
-          type="email"
-          value={form.email}
-          onChange={(e) => set("email", e.target.value)}
-          placeholder="email@example.com"
-        />
+        <input className="pf-field__input" type="email" value={form.email}
+          onChange={(e) => set("email", e.target.value)} placeholder="email@example.com" />
       </div>
 
       <div className="pf-field">
         <label className="pf-field__label">Tên đăng nhập</label>
-        <input
-          className="pf-field__input pf-field__input--disabled"
-          value={user?.username || ""}
-          disabled
-        />
+        <input className="pf-field__input pf-field__input--disabled"
+          value={user?.username || ""} disabled />
         <p className="pf-field__hint">Tên đăng nhập không thể thay đổi</p>
       </div>
 
@@ -121,9 +106,7 @@ const AddressCard = ({ address, onDelete, onSetDefault }) => (
     <div className="addr-item__info">
       <div className="addr-item__head">
         <p className="addr-item__name">{address.full_name}</p>
-        {address.is_default && (
-          <span className="addr-item__badge">Mặc định</span>
-        )}
+        {address.is_default && <span className="addr-item__badge">Mặc định</span>}
         <span className={`addr-item__type addr-item__type--${address.address_type}`}>
           {address.address_type === "shipping" ? "Giao hàng" : "Thanh toán"}
         </span>
@@ -135,17 +118,11 @@ const AddressCard = ({ address, onDelete, onSetDefault }) => (
     </div>
     <div className="addr-item__actions">
       {!address.is_default && (
-        <button
-          className="addr-item__btn"
-          onClick={() => onSetDefault(address.id)}
-        >
+        <button className="addr-item__btn" onClick={() => onSetDefault(address.id)}>
           Đặt mặc định
         </button>
       )}
-      <button
-        className="addr-item__btn addr-item__btn--danger"
-        onClick={() => onDelete(address.id)}
-      >
+      <button className="addr-item__btn addr-item__btn--danger" onClick={() => onDelete(address.id)}>
         Xoá
       </button>
     </div>
@@ -159,7 +136,6 @@ const NewAddressForm = ({ onSave, onCancel }) => {
     city: "", district: "", ward: "",
     address_type: "shipping", is_default: false,
   });
-
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
@@ -219,12 +195,8 @@ const NewAddressForm = ({ onSave, onCancel }) => {
       </label>
 
       <div className="new-addr-form__actions">
-        <button type="button" className="profile-btn profile-btn--ghost" onClick={onCancel}>
-          Huỷ
-        </button>
-        <button type="button" className="profile-btn" onClick={() => onSave(form)}>
-          Lưu địa chỉ
-        </button>
+        <button type="button" className="profile-btn profile-btn--ghost" onClick={onCancel}>Huỷ</button>
+        <button type="button" className="profile-btn" onClick={() => onSave(form)}>Lưu địa chỉ</button>
       </div>
     </div>
   );
@@ -254,7 +226,12 @@ const Profile = () => {
   const [activeTab,   setActiveTab]   = useState("info");
   const [showNewAddr, setShowNewAddr] = useState(false);
 
- 
+  // ── Password state — phải nằm trong Profile component ──
+  const [pwForm,      setPwForm]      = useState({ old: "", new: "", confirm: "" });
+  const [pwError,     setPwError]     = useState(null);
+  const [pwSuccess,   setPwSuccess]   = useState(false);
+  const [pwLoading,   setPwLoading]   = useState(false);
+  const [showPwForm,  setShowPwForm]  = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
@@ -289,7 +266,33 @@ const Profile = () => {
     navigate("/login");
   };
 
-  // Thống kê đơn hàng
+  const handleChangePassword = async (e) => {
+    e.preventDefault();
+    setPwError(null);
+
+    if (pwForm.new !== pwForm.confirm) {
+      setPwError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    if (pwForm.new.length < 6) {
+      setPwError("Mật khẩu mới phải có ít nhất 6 ký tự.");
+      return;
+    }
+
+    setPwLoading(true);
+    try {
+      await authApi.changePassword(pwForm.old, pwForm.new);
+      setPwSuccess(true);
+      setPwForm({ old: "", new: "", confirm: "" });
+      setShowPwForm(false);
+      setTimeout(() => setPwSuccess(false), 3000);
+    } catch (err) {
+      setPwError(err.response?.data?.error || "Đổi mật khẩu thất bại.");
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
   const stats = {
     total:     orders.length,
     pending:   orders.filter((o) => o.status === "pending").length,
@@ -298,10 +301,10 @@ const Profile = () => {
   };
 
   const TABS = [
-    { key: "info",     label: "Thông tin",    icon: "👤" },
-    { key: "address",  label: "Địa chỉ",      icon: "📍" },
-    { key: "orders",   label: "Đơn hàng",     icon: "📦" },
-    { key: "security", label: "Bảo mật",      icon: "🔒" },
+    { key: "info",     label: "Thông tin", icon: "👤" },
+    { key: "address",  label: "Địa chỉ",   icon: "📍" },
+    { key: "orders",   label: "Đơn hàng",  icon: "📦" },
+    { key: "security", label: "Bảo mật",   icon: "🔒" },
   ];
 
   const STATUS_LABEL = {
@@ -323,7 +326,6 @@ const Profile = () => {
           {/* Sidebar */}
           <aside className="profile-sidebar">
             <AvatarSection user={user} />
-
             <nav className="profile-nav">
               {TABS.map(({ key, label, icon }) => (
                 <button
@@ -335,9 +337,7 @@ const Profile = () => {
                   {label}
                 </button>
               ))}
-
               <div className="profile-nav__divider" />
-
               <button className="profile-nav__item profile-nav__item--danger" onClick={handleLogout}>
                 <span className="profile-nav__icon">🚪</span>
                 Đăng xuất
@@ -348,24 +348,21 @@ const Profile = () => {
           {/* Content */}
           <div className="profile-content">
 
-            {/* ── Tab: Thông tin ── */}
+            {/* ── Thông tin ── */}
             {activeTab === "info" && (
               <div className="profile-section">
                 <h2 className="profile-section__title">Thông tin cá nhân</h2>
-
-                {/* Stats */}
                 <div className="profile-stats">
-                  <StatsCard icon="📦" label="Tổng đơn"    value={stats.total}     color="blue"   />
-                  <StatsCard icon="⏳" label="Chờ xử lý"   value={stats.pending}   color="amber"  />
-                  <StatsCard icon="✅" label="Đã giao"      value={stats.delivered} color="green"  />
-                  <StatsCard icon="❌" label="Đã huỷ"       value={stats.cancelled} color="red"    />
+                  <StatsCard icon="📦" label="Tổng đơn"   value={stats.total}     color="blue"  />
+                  <StatsCard icon="⏳" label="Chờ xử lý"  value={stats.pending}   color="amber" />
+                  <StatsCard icon="✅" label="Đã giao"     value={stats.delivered} color="green" />
+                  <StatsCard icon="❌" label="Đã huỷ"      value={stats.cancelled} color="red"   />
                 </div>
-
                 <InfoForm user={user} onSave={handleSaveInfo} loading={loading} />
               </div>
             )}
 
-            {/* ── Tab: Địa chỉ ── */}
+            {/* ── Địa chỉ ── */}
             {activeTab === "address" && (
               <div className="profile-section">
                 <div className="profile-section__head">
@@ -380,10 +377,7 @@ const Profile = () => {
                 {showNewAddr && (
                   <div className="profile-card">
                     <h3 className="profile-card__title">Địa chỉ mới</h3>
-                    <NewAddressForm
-                      onSave={handleSaveAddress}
-                      onCancel={() => setShowNewAddr(false)}
-                    />
+                    <NewAddressForm onSave={handleSaveAddress} onCancel={() => setShowNewAddr(false)} />
                   </div>
                 )}
 
@@ -407,37 +401,29 @@ const Profile = () => {
               </div>
             )}
 
-            {/* ── Tab: Đơn hàng ── */}
+            {/* ── Đơn hàng ── */}
             {activeTab === "orders" && (
               <div className="profile-section">
                 <h2 className="profile-section__title">Lịch sử đơn hàng</h2>
-
                 {orders.length === 0 ? (
                   <div className="profile-empty">
                     <p>📦</p>
                     <p>Bạn chưa có đơn hàng nào.</p>
-                    <button className="profile-btn" onClick={() => navigate("/")}>
-                      Mua sắm ngay
-                    </button>
+                    <button className="profile-btn" onClick={() => navigate("/")}>Mua sắm ngay</button>
                   </div>
                 ) : (
                   <div className="profile-orders">
                     {orders.slice(0, 10).map((order) => {
                       const s = STATUS_LABEL[order.status] || { text: order.status, color: "gray" };
                       return (
-                        <div
-                          key={order.id}
-                          className="profile-order"
-                          onClick={() => navigate(`/orders/${order.id}`)}
-                        >
+                        <div key={order.id} className="profile-order"
+                          onClick={() => navigate(`/orders/${order.id}`)}>
                           <div className="profile-order__left">
                             <p className="profile-order__id">Đơn #{order.id}</p>
                             <p className="profile-order__date">
                               {new Date(order.created_at).toLocaleDateString("vi-VN")}
                             </p>
-                            <p className="profile-order__items">
-                              {order.items?.length || 0} sản phẩm
-                            </p>
+                            <p className="profile-order__items">{order.items?.length || 0} sản phẩm</p>
                           </div>
                           <div className="profile-order__right">
                             <span className={`order-badge order-badge--${s.color}`}>{s.text}</span>
@@ -459,21 +445,61 @@ const Profile = () => {
               </div>
             )}
 
-            {/* ── Tab: Bảo mật ── */}
+            {/* ── Bảo mật ── */}
             {activeTab === "security" && (
               <div className="profile-section">
                 <h2 className="profile-section__title">Bảo mật tài khoản</h2>
 
                 <div className="profile-card">
+
+                  {/* Đổi mật khẩu */}
                   <div className="security-item">
                     <div>
                       <p className="security-item__label">Mật khẩu</p>
-                      <p className="security-item__desc">Lần cập nhật cuối: không xác định</p>
+                      <p className="security-item__desc">Nên đổi định kỳ để bảo vệ tài khoản</p>
                     </div>
-                    <button className="profile-btn profile-btn--sm profile-btn--ghost">
-                      Đổi mật khẩu
+                    <button
+                      className="profile-btn profile-btn--sm profile-btn--ghost"
+                      onClick={() => { setShowPwForm((v) => !v); setPwError(null); }}
+                    >
+                      {showPwForm ? "Huỷ" : "Đổi mật khẩu"}
                     </button>
                   </div>
+
+                  {showPwForm && (
+                    <form className="pw-form" onSubmit={handleChangePassword}>
+                      {pwError && (
+                        <div className="profile-alert profile-alert--error">{pwError}</div>
+                      )}
+                      <div className="pf-field">
+                        <label className="pf-field__label">Mật khẩu hiện tại</label>
+                        <input className="pf-field__input" type="password"
+                          value={pwForm.old} required placeholder="Nhập mật khẩu cũ"
+                          onChange={(e) => setPwForm((f) => ({ ...f, old: e.target.value }))} />
+                      </div>
+                      <div className="pf-field">
+                        <label className="pf-field__label">Mật khẩu mới</label>
+                        <input className="pf-field__input" type="password"
+                          value={pwForm.new} required placeholder="Ít nhất 6 ký tự"
+                          onChange={(e) => setPwForm((f) => ({ ...f, new: e.target.value }))} />
+                      </div>
+                      <div className="pf-field">
+                        <label className="pf-field__label">Xác nhận mật khẩu mới</label>
+                        <input className="pf-field__input" type="password"
+                          value={pwForm.confirm} required placeholder="Nhập lại mật khẩu mới"
+                          onChange={(e) => setPwForm((f) => ({ ...f, confirm: e.target.value }))} />
+                      </div>
+                      <button type="submit" className="profile-btn" disabled={pwLoading}>
+                        {pwLoading ? "Đang lưu..." : "Xác nhận đổi mật khẩu"}
+                      </button>
+                    </form>
+                  )}
+
+                  {pwSuccess && (
+                    <div className="profile-alert profile-alert--success" style={{ marginTop: "1rem" }}>
+                      ✓ Đổi mật khẩu thành công!
+                    </div>
+                  )}
 
                   <div className="security-item">
                     <div>
@@ -485,16 +511,14 @@ const Profile = () => {
 
                   <div className="security-item security-item--danger">
                     <div>
-                      <p className="security-item__label">Đăng xuất khỏi tất cả thiết bị</p>
-                      <p className="security-item__desc">Xoá tất cả phiên đăng nhập hiện tại</p>
+                      <p className="security-item__label">Đăng xuất</p>
+                      <p className="security-item__desc">Xoá phiên đăng nhập hiện tại</p>
                     </div>
-                    <button
-                      className="profile-btn profile-btn--sm profile-btn--danger"
-                      onClick={handleLogout}
-                    >
+                    <button className="profile-btn profile-btn--sm profile-btn--danger" onClick={handleLogout}>
                       Đăng xuất
                     </button>
                   </div>
+
                 </div>
               </div>
             )}

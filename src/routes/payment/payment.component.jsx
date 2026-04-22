@@ -92,10 +92,12 @@ const Payment = () => {
   };
 
   const paymentCode = currentPayment?.payment_code || `SHOP${orderId}`;
-
+console.log("currentPayment",currentPayment)
+console.log("order", order)
   // Ưu tiên: currentPayment.amount → order.total → 0
-  const amount = Number(currentPayment?.amount) || Number(order?.total) || 0;
-
+  // const amount = Number(currentPayment?.amount) || Number(order?.total) || 0;
+  const amount = Number(order?.total)
+console.log("ammount", amount)
   // Chỉ build QR khi có đủ dữ liệu
   const qrUrl = amount > 0
     ? `https://img.vietqr.io/image/${BANK_NAME}-${BANK_NUMBER}-compact2.png`

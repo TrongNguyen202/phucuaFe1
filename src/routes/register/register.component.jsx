@@ -58,6 +58,7 @@ useEffect(() => {
           : error)
       : null
   );
+  
 
   return (
     <div className="auth-page">

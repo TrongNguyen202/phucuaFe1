@@ -74,6 +74,8 @@ export const authApi = {
   /** POST /auth/register/ — đăng ký tài khoản */
   register: (data) =>
     api.post("/auth/users/register/", data),
+  changePassword: (old_password, new_password) =>
+    api.post("/auth/users/change-password/", { old_password, new_password }),
 };
 
 // ==========================================
