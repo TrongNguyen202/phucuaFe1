@@ -61,7 +61,7 @@ import Checkout      from "./routes/checkout/checkout.component";
 import Payment       from "./routes/payment/payment.component";
 import Orders        from "./routes/orders/orders.component";
 import Profile from "./routes/profile/Profile.component";
-
+import AdminLayout from "./routes/admin/admin.component";
 // Route yêu cầu đăng nhập
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem("access_token");
@@ -94,6 +94,7 @@ const App = () => {
       <Route path="/orders"            element={<PrivateRoute><Orders /></PrivateRoute>} />
       <Route path="/orders/:orderId"   element={<PrivateRoute><Orders /></PrivateRoute>} />
       <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+      <Route path="/admin/*"           element={<AdminLayout />} />
     </Routes>
   );
 };

@@ -29,29 +29,69 @@ api.interceptors.request.use((config) => {
 
 // Tự động refresh token khi nhận 401
 // Tự động refresh token khi nhận 401
+// api.interceptors.response.use(
+//   (response) => response,
+//   async (error) => {
+//     const original = error.config;
+//     if (error.response?.status === 401 && !original._retry) {
+//       original._retry = true;
+//       try {
+//         const refresh = localStorage.getItem("refresh_token");
+//         if (!refresh) throw new Error("No refresh token");
+
+//         const { data } = await axios.post(
+//           `${BASE_URL}/users/token/refresh/`,  // ← đúng URL
+//           { refresh }
+//         );
+//         localStorage.setItem("access_token", data.access);
+//         original.headers.Authorization = `Bearer ${data.access}`;
+//         return api(original);
+//       } catch {
+//         localStorage.removeItem("access_token");
+//         localStorage.removeItem("refresh_token");
+//         window.location.href = "/login";
+//       }
+//     }
+//     return Promise.reject(error);
+//   }
+// );
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const original = error.config;
+
+    // Tránh loop vô hạn khi refresh cũng fail
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
+
       try {
         const refresh = localStorage.getItem("refresh_token");
         if (!refresh) throw new Error("No refresh token");
 
         const { data } = await axios.post(
-          `${BASE_URL}/users/token/refresh/`,  // ← đúng URL
+          `${BASE_URL}/auth/users/token/refresh/`,  // ← đúng URL của bạn
           { refresh }
         );
+
         localStorage.setItem("access_token", data.access);
+
+        // Nếu backend rotate refresh token thì lưu lại
+        if (data.refresh) {
+          localStorage.setItem("refresh_token", data.refresh);
+        }
+
         original.headers.Authorization = `Bearer ${data.access}`;
         return api(original);
+
       } catch {
+        // Refresh fail → xoá token → về login
         localStorage.removeItem("access_token");
         localStorage.removeItem("refresh_token");
         window.location.href = "/login";
       }
     }
+
     return Promise.reject(error);
   }
 );
@@ -290,6 +330,15 @@ export const paymentApi = {
     // Trả về hàm để cancel polling thủ công nếu cần
     return () => clearInterval(interval);
   },
+};
+
+export const adminApi = {
+  getDashboard: ()        => api.get("/admin-panel/dashboard/"),
+  getProducts:  (params)  => api.get("/admin-panel/products/", { params }),
+  getOrders:    (params)  => api.get("/admin-panel/orders/",   { params }),
+  updateOrder:  (id, data) => api.patch(`/admin-panel/orders/${id}/update_status/`, data),
+  getUsers:     (params)  => api.get("/admin-panel/users/",    { params }),
+  toggleUser:   (data)    => api.patch("/admin-panel/users/",  data),
 };
 
 // ==========================================
