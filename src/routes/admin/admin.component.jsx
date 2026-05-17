@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useLocation, Routes, Route } from "react-router-dom";
 import api from "../../utils/api/api";
 import "./admin.styles.scss";
-
+import AdminCreateProduct from './AdminCreateProduct';
+import AdminEditProduct from "./AdminEditProduct";
 // ─── Icons ────────────────────────────────────────────────────────
 const Icon = ({ name }) => {
   const icons = {
@@ -182,7 +183,8 @@ const Products = () => {
   const [loading, setLoading]   = useState(true);
   const [search,  setSearch]    = useState("");
   const [filter,  setFilter]    = useState("");
-
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingProduct, setEditingProduct] = useState(null);
   const load = useCallback(() => {
     setLoading(true);
     api.get("/admin-panel/products/", { params: { search, status: filter } })
@@ -231,7 +233,10 @@ const Products = () => {
             >
               {v === "" ? "Tất cả" : v === "active" ? "Đang bán" : "Ẩn"}
             </button>
+            
           ))}
+          <button className="adm-btn-primary" onClick={() => setShowCreate(true)}>+ Thêm sản phẩm</button>
+          {showCreate && <AdminCreateProduct onClose={() => setShowCreate(false)} onCreated={load} />}
         </div>
       </div>
 
@@ -241,7 +246,15 @@ const Products = () => {
         <div className="adm-table-wrap">
           <table className="adm-table">
             <thead>
-              <tr><th>Sản phẩm</th><th>Danh mục</th><th>Giá</th><th>Đang bán</th><th>Nổi bật</th><th>Biến thể</th></tr>
+              <tr>
+            <th>Sản phẩm</th>
+            <th>Danh mục</th>
+            <th>Giá</th>
+            <th>Đang bán</th>
+            <th>Nổi bật</th>
+            <th>Biến thể</th>
+            <th>Hành động</th>
+            </tr>
             </thead>
             <tbody>
               {products.map((p) => (
@@ -278,10 +291,30 @@ const Products = () => {
                     </button>
                   </td>
                   <td>{p.variants?.length ?? 0}</td>
+                  <td>
+  <button
+    className="adm-action-btn"
+    onClick={() => setEditingProduct(p)}
+  >
+    <Icon name="edit" />
+  </button>
+</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          {
+  editingProduct && (
+    <AdminCreateProduct
+      editData={editingProduct}
+      onClose={() => setEditingProduct(null)}
+      onCreated={() => {
+        setEditingProduct(null);
+        load();
+      }}
+    />
+  )
+}
           {products.length === 0 && <div className="adm-empty">Không tìm thấy sản phẩm.</div>}
         </div>
       )}

@@ -125,7 +125,11 @@ const handleSearch = (q) => {
   };
 
   // Bestsellers: filter featured từ products hoặc dùng featured list
-  const bestsellers = featured.slice(0, 8);
+  // Bestsellers
+// ─── Bestsellers ─────────────────────────────
+const bestsellers = products
+  ?.filter((p) => p.is_featured === true)
+  ?.slice(0, 8) || [];
 
   return (
     <div className="home">
